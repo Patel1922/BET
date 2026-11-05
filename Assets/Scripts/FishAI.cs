@@ -8,6 +8,10 @@ public class FishAI : MonoBehaviour
 
     private Vector3 startingPosition;
     private int direction = 1;
+
+    //bait detection
+    public Transform bait;
+    public float detectionRange = 7f;
     void Start()
     {
         startingPosition = transform.position;
@@ -17,8 +21,17 @@ public class FishAI : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // Moving the fish horizontally
+        //check for nearby bait 
+    if(bait != null && Vector2.Distance(transform.position, bait.position)<= detectionRange)
+    {
+        //fish approaches the bait
+        transform.position = Vector3.MoveTowards ( transform.position, bait.position, swimSpeed * Time.deltaTime);
+    }
+    else
+    {
+        // no bait in range, keep swimming
         transform.position += Vector3.right * direction * swimSpeed * Time.deltaTime;
+
 
         // Change direction when fish reaches its swimming limit
         if(transform.position.x >= startingPosition.x + swimDistance)
@@ -30,4 +43,5 @@ public class FishAI : MonoBehaviour
             direction = 1 ; // go same direction
         } 
     }
+}
 }
