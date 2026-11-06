@@ -1,2 +1,6 @@
 Testing github
+<<<<<<< HEAD
 Jaynesh 
+=======
+Testing hello
+>>>>>>> f3a4380b857d01f89e21d4331a25d8d07cfc52b3
