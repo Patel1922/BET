@@ -924,7 +924,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 0}
+  m_Sprite: {fileID: -1064725223496627946, guid: e107c8ee1462cb14e84228fda31a7f8a, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -972,8 +972,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BackstorySlideshow
   slideImage: {fileID: 1538192313}
-  slides: []
-  secondsPerSlide: 5
+  slides:
+  - {fileID: -1064725223496627946, guid: e107c8ee1462cb14e84228fda31a7f8a, type: 3}
+  - {fileID: 4851933142287678357, guid: 328f2611091f03944a16b51bf7c3954c, type: 3}
+  - {fileID: 7176638252800578000, guid: 35ef7a6729813604d99f10ea22737090, type: 3}
+  - {fileID: 6207440994086980717, guid: 464f0bc6d021c8046beb9be7acf34690, type: 3}
+  slideDuration: 3
 --- !u!4 &1841122849
 Transform:
   m_ObjectHideFlags: 0
