@@ -14,5 +14,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Backstory.unity
     guid: 2d09893bc564f3a4db29a9a56d10fafd
+  - enabled: 1
+    path: Assets/Scenes/LevelSelect.unity
+    guid: e583455bfa408fa4ea42a45cb92558b5
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
