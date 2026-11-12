@@ -7,4 +7,14 @@ public class SceneSwitcher : MonoBehaviour
     {
         SceneManager.LoadScene("BackStory");
     }
+
+    public void OpenRulesScreen()
+    {
+        SceneManager.LoadScene("RulesScreen");
+    }
+
+    public void OpenMainMenu()
+    {
+        SceneManager.LoadScene("MainMenu");
+    }
 }
