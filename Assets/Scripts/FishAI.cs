@@ -68,6 +68,7 @@ public class FishAI : MonoBehaviour
         if (CurrentState == FishState.Biting)
         {
             // Fish stays beside the bait for a limited time, then loses interest.
+            biteTimer += Time.deltaTime;
             hookWindowTimer += Time.deltaTime;
             if (hookWindowTimer > biteWindow)
             {
