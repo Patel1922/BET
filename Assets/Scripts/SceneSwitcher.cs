@@ -17,4 +17,13 @@ public class SceneSwitcher : MonoBehaviour
     {
         SceneManager.LoadScene("MainMenu");
     }
+
+    public void Level1()
+    {
+        SceneManager.LoadScene("Level1");
+    }
+    public void LevelSelect()
+    {
+        SceneManager.LoadScene("LevelSelect");
+    }
 }
