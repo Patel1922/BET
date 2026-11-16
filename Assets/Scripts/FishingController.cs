@@ -109,10 +109,21 @@ public class FishingController : MonoBehaviour
             status = "No fish is ready to bite yet.";
             return;
         }
-        hookedFish = candidate;
-        remainingReels = candidate.RequiredReels;
-        escapeTimer = secondsToEscape;
-        status = candidate.Rarity + " hooked! Tap REEL " + remainingReels + " times.";
+        
+    if (candidate.TryEscapeDuringStruggle())
+    {
+        status = candidate.Rarity + " escaped! Cast again.";
+        ClearBait();
+        return;
+    }
+
+    hookedFish = candidate;
+    remainingReels = candidate.RequiredReels;
+    escapeTimer = secondsToEscape;
+
+    status = candidate.Rarity +
+        " hooked! Tap REEL " + remainingReels + " times.";
+
     }
 
     private void ClearBait()
@@ -121,31 +132,119 @@ public class FishingController : MonoBehaviour
         if (bait != null) bait.gameObject.SetActive(false);
     }
 
+
     private void OnGUI()
     {
-        // Prototype mobile UI scaled to work on both phone and desktop.
+        // Scale UI for mobile and desktop.
         float width = Mathf.Min(Screen.width, Screen.height);
         float scale = Mathf.Max(0.9f, width / 500f);
+
         if (labelStyle == null)
         {
-            labelStyle = new GUIStyle(GUI.skin.box) { fontSize = 18, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 22, fontStyle = FontStyle.Bold };
+            labelStyle = new GUIStyle(GUI.skin.box)
+            {
+                fontSize = 18,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
+
+            buttonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 22,
+                fontStyle = FontStyle.Bold
+            };
         }
+
         labelStyle.fontSize = Mathf.RoundToInt(18 * scale);
         buttonStyle.fontSize = Mathf.RoundToInt(22 * scale);
 
         float margin = 14f * scale;
-        float panelHeight = 100f * scale;
+        float panelHeight = 110f * scale;
         float buttonHeight = 66f * scale;
         float y = Screen.height - buttonHeight - margin;
-        GUI.Box(new Rect(margin, margin, Screen.width - margin * 2, panelHeight),
-            "Coins: " + Coins + "    Caught: " + TotalCaught + "\n" + status, labelStyle);
 
-        float buttonWidth = (Screen.width - margin * 3) / 2f;
-        if (GUI.Button(new Rect(margin, y, buttonWidth, buttonHeight), "CAST", buttonStyle))
+        // Start with the current status message.
+        string message = status;
+
+        // Check fish activity while bait is in the water.
+        if (hookedFish == null &&
+            ActiveBait != null &&
+            spawner != null)
+        {
+            bool fishApproaching = false;
+            bool fishBiting = false;
+
+            foreach (FishAI fish in spawner.Fish)
+            {
+                if (fish == null)
+                    continue;
+
+                // Fish is ready to be hooked.
+                if (fish.IsBiting)
+                {
+                    fishBiting = true;
+                    break;
+                }
+
+                // Fish is approaching or beginning to bite.
+                if (fish.CurrentState == FishAI.FishState.Approaching ||
+                    fish.CurrentState == FishAI.FishState.Biting)
+                {
+                    fishApproaching = true;
+                }
+            }
+
+            if (fishBiting)
+            {
+                message = "FISH BITING! TAP HOOK NOW!";
+            }
+            else if (fishApproaching)
+            {
+                message = "Fish detected! Approaching bait...";
+            }
+            else
+            {
+                message = "Waiting for a fish to bite...";
+            }
+        }
+
+        // Display coins, caught fish, and live status.
+        GUI.Box(
+            new Rect(
+                margin,
+                margin,
+                Screen.width - margin * 2f,
+                panelHeight
+            ),
+            "Coins: " + Coins +
+            "    Caught: " + TotalCaught +
+            "\n" + message,
+            labelStyle
+        );
+
+        float buttonWidth =
+            (Screen.width - margin * 3f) / 2f;
+
+        if (GUI.Button(
+            new Rect(margin, y, buttonWidth, buttonHeight),
+            "CAST",
+            buttonStyle))
+        {
             Cast();
-        if (GUI.Button(new Rect(margin * 2 + buttonWidth, y, buttonWidth, buttonHeight),
-            hookedFish != null ? "REEL" : "HOOK", buttonStyle))
+        }
+
+        if (GUI.Button(
+            new Rect(
+                margin * 2f + buttonWidth,
+                y,
+                buttonWidth,
+                buttonHeight
+            ),
+            hookedFish != null ? "REEL" : "HOOK",
+            buttonStyle))
+        {
             HookOrReel();
+        }
     }
+
 }
