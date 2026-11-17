@@ -1,9 +1,13 @@
 fileFormatVersion: 2
 <<<<<<< HEAD
+<<<<<<< HEAD
 guid: 06f7886011364e74598abb85ebef5ad7
 =======
 guid: 3edb1f9960c9f254bbbc3acd3ce95cb6
 >>>>>>> c8375b6281689391e3279f9be2b0924d2cfa600c
+=======
+guid: 3edb1f9960c9f254bbbc3acd3ce95cb6
+>>>>>>> origin/feature/full-game-integration
 folderAsset: yes
 DefaultImporter:
   externalObjects: {}

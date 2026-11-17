@@ -17,15 +17,13 @@ MonoBehaviour:
   description: 
   preview: {fileID: 0}
   dependencies:
+  - dependency: {fileID: 5439389042686388527, guid: 621c01cb2e6d5064dac38b66a983ad4f, type: 3}
+    instantiationMode: 0
   - dependency: {fileID: 2800000, guid: 095c3122a7ba36c4b860861b4b9a998b, type: 3}
     instantiationMode: 0
   - dependency: {fileID: 2800000, guid: 149df702498104949a32da4b4c5e1cf4, type: 3}
     instantiationMode: 0
-  - dependency: {fileID: 7048990388313488061, guid: 463c90d123ab89e469346be8eedf897a, type: 3}
-    instantiationMode: 0
   - dependency: {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-    instantiationMode: 0
-  - dependency: {fileID: 2800000, guid: 75f5f34dc1b5347e0b8351032682f224, type: 3}
     instantiationMode: 0
   - dependency: {fileID: 2800000, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
     instantiationMode: 0

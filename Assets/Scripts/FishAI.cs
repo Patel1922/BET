@@ -24,6 +24,14 @@ public class FishAI : MonoBehaviour
     public Sprite royalSprite;
     public Sprite eliteSprite;
 
+    [Header("Water Boundaries")]
+    public SpriteRenderer waterArea;
+    public float waterPadding = 0.15f;
+
+    [Header("Leaving the Water")]
+    public float exitZoneWidth = 0.6f;
+    public float fadeDistance = 0.75f;
+
     [Header("Movement")]
     public float swimSpeed = 2f;
     public float swimDistance = 3f;
@@ -44,8 +52,11 @@ public class FishAI : MonoBehaviour
     public float minDepthChangeTime = 2f;
     public float maxDepthChangeTime = 4f;
 
-    [Range(0f, 1f)] public float minSwimY = 0.12f;
-    [Range(0f, 1f)] public float maxSwimY = 0.85f;
+    [Range(0f, 1f)]
+    public float minSwimY = 0.12f;
+
+    [Range(0f, 1f)]
+    public float maxSwimY = 0.85f;
 
     [Header("Random Swimming Behavior")]
     public float minDirectionChangeTime = 2f;
@@ -79,7 +90,6 @@ public class FishAI : MonoBehaviour
         Rarity == FishRarity.Elite ? 250 :
         Rarity == FishRarity.Royal ? 150 : 100;
 
-    // Retained for compatibility with older controller versions.
     public int RequiredReels =>
         Rarity == FishRarity.Elite ? 5 :
         Rarity == FishRarity.Royal ? 3 : 2;
@@ -89,17 +99,20 @@ public class FishAI : MonoBehaviour
         Rarity == FishRarity.Royal ? 0.20f : 0.10f;
 
     private SpriteRenderer fishSprite;
+    private Camera swimCamera;
 
-    private Vector3 startingPosition;
     private Vector3 originalScale;
     private Vector3 hookedPosition;
 
     private float originalSwimSpeed;
+    private float originalAlpha = 1f;
 
     private int direction = 1;
+    private bool exitingWater = false;
 
     private float leftBoundary;
     private float rightBoundary;
+    private bool riverMode = false;
 
     private float biteTimer;
     private float hookWindowTimer;
@@ -111,14 +124,10 @@ public class FishAI : MonoBehaviour
     private float directionChangeTimer;
     private float pauseTimer;
 
-    private Camera swimCamera;
-    private bool riverMode = false;
-
     private void Awake()
     {
         fishSprite = GetComponent<SpriteRenderer>();
 
-        startingPosition = transform.position;
         originalScale = transform.localScale;
         originalSwimSpeed = swimSpeed;
     }
@@ -132,26 +141,28 @@ public class FishAI : MonoBehaviour
 
         CurrentState = FishState.Patrolling;
 
+        exitingWater = false;
+        riverMode = false;
+
         biteTimer = 0f;
         hookWindowTimer = 0f;
         ignoreBaitUntil = 0f;
 
-        startingPosition = transform.position;
-
-        // Initialize natural swimming.
         swimCamera = Camera.main;
-        targetSwimY = transform.position.y;
-        depthChangeTimer = Random.Range(1f, 3f);
 
-        // Each fish receives independent random movement.
-        directionChangeTimer = Random.Range(
-            Mathf.Min(minDirectionChangeTime, maxDirectionChangeTime),
-            Mathf.Max(minDirectionChangeTime, maxDirectionChangeTime)
-        );
-
-        pauseTimer = 0f;
         direction = Random.value < 0.5f ? -1 : 1;
         swimTime = Random.Range(0f, 10f);
+
+        pauseTimer = 0f;
+
+        directionChangeTimer = Random.Range(
+            Mathf.Min(
+                minDirectionChangeTime,
+                maxDirectionChangeTime),
+            Mathf.Max(
+                minDirectionChangeTime,
+                maxDirectionChangeTime)
+        );
 
         float sizeMultiplier =
             rarity == FishRarity.Elite ? 1.35f :
@@ -179,9 +190,19 @@ public class FishAI : MonoBehaviour
                         : new Color(0.75f, 1f, 0.65f);
         }
 
+        originalAlpha = fishSprite.color.a;
+
         swimSpeed = originalSwimSpeed *
             (rarity == FishRarity.Elite ? 1.45f :
              rarity == FishRarity.Royal ? 1.20f : 1f);
+
+        FindWater();
+
+        // Keep newly spawned fish inside the water.
+        ClampInsideWater(true);
+
+        targetSwimY = transform.position.y;
+        depthChangeTimer = 0f;
 
         FaceDirection(direction);
     }
@@ -192,25 +213,38 @@ public class FishAI : MonoBehaviour
         float rightEdge)
     {
         riverMode = true;
+
         direction = newDirection >= 0 ? 1 : -1;
 
         leftBoundary = leftEdge;
         rightBoundary = rightEdge;
 
-        startingPosition = transform.position;
         FaceDirection(direction);
+    }
+
+    private void FindWater()
+    {
+        if (waterArea != null)
+            return;
+
+        GameObject water = GameObject.Find("Water");
+
+        if (water != null)
+        {
+            waterArea = water.GetComponent<SpriteRenderer>();
+        }
     }
 
     private void Update()
     {
-        // Hooked fish struggle instead of swimming normally.
+        // Hooked fish continue fighting normally.
         if (CurrentState == FishState.Hooked)
         {
             StruggleMovement();
             return;
         }
 
-        // Fish is biting and awaiting a hook.
+        // Fish waiting to be hooked.
         if (CurrentState == FishState.Biting)
         {
             biteTimer += Time.deltaTime;
@@ -225,103 +259,123 @@ public class FishAI : MonoBehaviour
             return;
         }
 
-        bool baitAvailable =
-            bait != null &&
-            bait.gameObject.activeInHierarchy &&
-            Time.time >= ignoreBaitUntil;
-
-        if (baitAvailable)
+        // Fish already leaving cannot chase bait.
+        if (!exitingWater)
         {
-            float distance = Vector2.Distance(
-                transform.position,
-                bait.position
-            );
+            bool baitAvailable =
+                bait != null &&
+                bait.gameObject.activeInHierarchy &&
+                Time.time >= ignoreBaitUntil;
 
-            if (distance <= detectionRange)
+            if (baitAvailable)
             {
-                if (distance > biteDistance)
-                {
-                    CurrentState = FishState.Approaching;
-                    MoveTowardBait();
-                }
-                else
-                {
-                    CurrentState = FishState.Biting;
-                    biteTimer = 0f;
-                    hookWindowTimer = 0f;
-                }
+                float distance = Vector2.Distance(
+                    transform.position,
+                    bait.position
+                );
 
-                return;
+                if (distance <= detectionRange)
+                {
+                    if (distance > biteDistance)
+                    {
+                        CurrentState = FishState.Approaching;
+                        MoveTowardBait();
+                    }
+                    else
+                    {
+                        CurrentState = FishState.Biting;
+                        biteTimer = 0f;
+                        hookWindowTimer = 0f;
+                    }
+
+                    return;
+                }
             }
         }
 
         SwimNormally();
     }
 
-    private void ChooseNewSwimDepth()
+    private void SwimNormally()
     {
-        if (swimCamera == null)
-            swimCamera = Camera.main;
+        CurrentState = FishState.Patrolling;
 
-        if (swimCamera == null)
+        FindWater();
+
+        // Check whether fish reached an exit.
+        if (!exitingWater && waterArea != null)
         {
-            targetSwimY = transform.position.y;
+            Bounds water = waterArea.bounds;
+
+            float leftExit =
+                water.min.x + Mathf.Max(0f, exitZoneWidth);
+
+            float rightExit =
+                water.max.x - Mathf.Max(0f, exitZoneWidth);
+
+            // Only begin exiting when already swimming
+            // toward the nearest boundary.
+            if (direction < 0 &&
+                transform.position.x <= leftExit)
+            {
+                exitingWater = true;
+                pauseTimer = 0f;
+            }
+            else if (direction > 0 &&
+                     transform.position.x >= rightExit)
+            {
+                exitingWater = true;
+                pauseTimer = 0f;
+            }
         }
-        else
+
+        // Normal fish can pause or change direction.
+        // Exiting fish cannot.
+        if (!exitingWater)
         {
-            float depth = Mathf.Abs(
-                transform.position.z -
-                swimCamera.transform.position.z
-            );
+            UpdateRandomSwimming();
 
-            float viewportY = Random.Range(
-                Mathf.Min(minSwimY, maxSwimY),
-                Mathf.Max(minSwimY, maxSwimY)
-            );
-
-            Vector3 worldPoint = swimCamera.ViewportToWorldPoint(
-                new Vector3(0.5f, viewportY, depth)
-            );
-
-            targetSwimY = worldPoint.y;
+            if (pauseTimer > 0f)
+                return;
         }
 
-        depthChangeTimer = Random.Range(
-            Mathf.Min(minDepthChangeTime, maxDepthChangeTime),
-            Mathf.Max(minDepthChangeTime, maxDepthChangeTime)
-        );
-    }
-
-    private void SwimVertically()
-    {
-        depthChangeTimer -= Time.deltaTime;
-
-        if (depthChangeTimer <= 0f)
-            ChooseNewSwimDepth();
-
+        // Swim horizontally.
         Vector3 position = transform.position;
 
-        position.y = Mathf.MoveTowards(
-            position.y,
-            targetSwimY,
-            verticalSwimSpeed * Time.deltaTime
-        );
-
-        // Small natural swimming wobble.
-        swimTime += Time.deltaTime;
-
-        float wobble =
-            Mathf.Sin(swimTime * wobbleFrequency) *
-            verticalWobble * Time.deltaTime;
-
-        position.y += wobble;
+        position.x +=
+            direction * swimSpeed * Time.deltaTime;
 
         transform.position = position;
+
+        // Continue natural vertical movement.
+        SwimVertically();
+
+        FaceDirection(direction);
+
+        // Remove fish once completely beyond water.
+        if (waterArea != null && fishSprite != null)
+        {
+            Bounds water = waterArea.bounds;
+            Bounds fish = fishSprite.bounds;
+
+            if (fish.max.x < water.min.x ||
+                fish.min.x > water.max.x)
+            {
+                Destroy(gameObject);
+            }
+        }
+        else if (riverMode)
+        {
+            if (position.x < leftBoundary - 1f ||
+                position.x > rightBoundary + 1f)
+            {
+                Destroy(gameObject);
+            }
+        }
     }
 
     private void UpdateRandomSwimming()
     {
-        // If resting, count down the pause.
         if (pauseTimer > 0f)
         {
             pauseTimer -= Time.deltaTime;
@@ -334,82 +388,253 @@ public class FishAI : MonoBehaviour
             return;
 
         directionChangeTimer = Random.Range(
-            Mathf.Min(minDirectionChangeTime, maxDirectionChangeTime),
-            Mathf.Max(minDirectionChangeTime, maxDirectionChangeTime)
+            Mathf.Min(
+                minDirectionChangeTime,
+                maxDirectionChangeTime),
+            Mathf.Max(
+                minDirectionChangeTime,
+                maxDirectionChangeTime)
         );
 
-        // Randomly pause.
         if (Random.value < pauseChance)
         {
             pauseTimer = Random.Range(
-                Mathf.Min(minPauseDuration, maxPauseDuration),
-                Mathf.Max(minPauseDuration, maxPauseDuration)
+                Mathf.Min(
+                    minPauseDuration,
+                    maxPauseDuration),
+                Mathf.Max(
+                    minPauseDuration,
+                    maxPauseDuration)
             );
 
             return;
         }
 
-        // Change swimming direction randomly.
+        // Pick a random horizontal direction.
         direction = Random.value < 0.5f ? -1 : 1;
 
         FaceDirection(direction);
     }
 
-    private void SwimNormally()
+    private void ChooseNewSwimDepth()
     {
-        CurrentState = FishState.Patrolling;
+        FindWater();
 
-        // Decide whether to turn or pause.
-        UpdateRandomSwimming();
-
-        // During a pause, the fish stays still.
-        if (pauseTimer > 0f)
-            return;
-
-        // Horizontal swimming.
-        float movementX =
-            direction * swimSpeed * Time.deltaTime;
-
-        transform.position +=
-            new Vector3(movementX, 0f, 0f);
-
-        // Vertical swimming.
-        SwimVertically();
-
-        if (riverMode)
+        if (waterArea != null)
         {
-            if (transform.position.x > rightBoundary + 1f ||
-                transform.position.x < leftBoundary - 1f)
-            {
-                Destroy(gameObject);
-            }
+            Bounds water = waterArea.bounds;
+            Bounds fish = fishSprite.bounds;
+
+            float minY =
+                water.min.y +
+                fish.extents.y +
+                waterPadding;
+
+            float maxY =
+                water.max.y -
+                fish.extents.y -
+                waterPadding;
+
+            targetSwimY = minY <= maxY
+                ? Random.Range(minY, maxY)
+                : water.center.y;
         }
         else
         {
-            // Patrol inside the fish's local boundaries.
-            float leftLimit =
-                startingPosition.x - swimDistance;
+            if (swimCamera == null)
+                swimCamera = Camera.main;
 
-            float rightLimit =
-                startingPosition.x + swimDistance;
-
-            Vector3 position = transform.position;
-
-            if (position.x >= rightLimit)
+            if (swimCamera != null)
             {
-                position.x = rightLimit;
-                direction = -1;
-            }
-            else if (position.x <= leftLimit)
-            {
-                position.x = leftLimit;
-                direction = 1;
-            }
+                float depth = Mathf.Abs(
+                    transform.position.z -
+                    swimCamera.transform.position.z
+                );
 
-            transform.position = position;
+                float viewportY = Random.Range(
+                    Mathf.Min(minSwimY, maxSwimY),
+                    Mathf.Max(minSwimY, maxSwimY)
+                );
+
+                Vector3 worldPoint =
+                    swimCamera.ViewportToWorldPoint(
+                        new Vector3(
+                            0.5f,
+                            viewportY,
+                            depth
+                        )
+                    );
+
+                targetSwimY = worldPoint.y;
+            }
+            else
+            {
+                targetSwimY = transform.position.y;
+            }
         }
 
-        FaceDirection(direction);
+        depthChangeTimer = Random.Range(
+            Mathf.Min(
+                minDepthChangeTime,
+                maxDepthChangeTime),
+            Mathf.Max(
+                minDepthChangeTime,
+                maxDepthChangeTime)
+        );
+    }
+
+    private void SwimVertically()
+    {
+        depthChangeTimer -= Time.deltaTime;
+
+        if (depthChangeTimer <= 0f)
+        {
+            ChooseNewSwimDepth();
+        }
+
+        Vector3 position = transform.position;
+
+        position.y = Mathf.MoveTowards(
+            position.y,
+            targetSwimY,
+            verticalSwimSpeed * Time.deltaTime
+        );
+
+        swimTime += Time.deltaTime;
+
+        position.y +=
+            Mathf.Sin(swimTime * wobbleFrequency) *
+            verticalWobble *
+            Time.deltaTime;
+
+        transform.position = position;
+    }
+
+    private void LateUpdate()
+    {
+        FindWater();
+
+        // Keep the fish underwater vertically.
+        ClampInsideWater(false);
+
+        // Fade fish near left and right edges.
+        FadeAtEdges();
+    }
+
+    private void ClampInsideWater(bool horizontal)
+    {
+        if (waterArea == null ||
+            fishSprite == null ||
+            fishSprite.sprite == null)
+        {
+            return;
+        }
+
+        Bounds water = waterArea.bounds;
+        Bounds fish = fishSprite.bounds;
+
+        Vector3 position = transform.position;
+
+        // Account for off-center sprite pivots.
+        Vector3 offset = fish.center - position;
+
+        float minY =
+            water.min.y +
+            fish.extents.y +
+            waterPadding -
+            offset.y;
+
+        float maxY =
+            water.max.y -
+            fish.extents.y -
+            waterPadding -
+            offset.y;
+
+        if (minY <= maxY)
+        {
+            position.y = Mathf.Clamp(
+                position.y,
+                minY,
+                maxY
+            );
+        }
+
+        // Horizontal clamping ONLY on initial spawn.
+        // Never clamp a fish while it is leaving.
+        if (horizontal)
+        {
+            float minX =
+                water.min.x +
+                fish.extents.x +
+                waterPadding -
+                offset.x;
+
+            float maxX =
+                water.max.x -
+                fish.extents.x -
+                waterPadding -
+                offset.x;
+
+            if (minX <= maxX)
+            {
+                position.x = Mathf.Clamp(
+                    position.x,
+                    minX,
+                    maxX
+                );
+            }
+        }
+
+        transform.position = position;
+    }
+
+    private void FadeAtEdges()
+    {
+        if (fishSprite == null ||
+            waterArea == null ||
+            fishSprite.sprite == null)
+        {
+            return;
+        }
+
+        Color color = fishSprite.color;
+
+        if (!exitingWater)
+        {
+            color.a = originalAlpha;
+            fishSprite.color = color;
+            return;
+        }
+
+        Bounds water = waterArea.bounds;
+        Bounds fish = fishSprite.bounds;
+
+        // Start fading while still inside the water.
+        float distanceInside;
+
+        if (direction < 0)
+        {
+            distanceInside =
+                fish.center.x - water.min.x;
+        }
+        else
+        {
+            distanceInside =
+                water.max.x - fish.center.x;
+        }
+
+        float distance = Mathf.Max(
+            0.01f,
+            fadeDistance
+        );
+
+        float alpha = Mathf.Clamp01(
+            distanceInside / distance
+        );
+
+        color.a = originalAlpha * alpha;
+
+        fishSprite.color = color;
     }
 
     private void MoveTowardBait()
@@ -417,7 +642,8 @@ public class FishAI : MonoBehaviour
         if (bait == null)
             return;
 
-        float dx = bait.position.x - transform.position.x;
+        float dx =
+            bait.position.x - transform.position.x;
 
         FaceDirection(dx);
 
@@ -438,8 +664,11 @@ public class FishAI : MonoBehaviour
     {
         float t = Time.time * struggleSpeed;
 
-        float offsetX = Mathf.Sin(t) * struggleHorizontal;
-        float offsetY = Mathf.Cos(t * 1.4f) * struggleVertical;
+        float offsetX =
+            Mathf.Sin(t) * struggleHorizontal;
+
+        float offsetY =
+            Mathf.Cos(t * 1.4f) * struggleVertical;
 
         transform.position = hookedPosition +
             new Vector3(offsetX, offsetY, 0f);
@@ -450,11 +679,17 @@ public class FishAI : MonoBehaviour
     private void FaceDirection(float dx)
     {
         if (Mathf.Abs(dx) > 0.01f)
+        {
             fishSprite.flipX = dx < 0f;
+        }
     }
 
     public void SetBait(Transform newBait)
     {
+        // Fish that are leaving ignore new bait.
+        if (exitingWater)
+            return;
+
         bait = newBait;
 
         biteTimer = 0f;
@@ -462,7 +697,9 @@ public class FishAI : MonoBehaviour
         ignoreBaitUntil = 0f;
 
         if (!IsHooked)
+        {
             CurrentState = FishState.Patrolling;
+        }
     }
 
     public bool HookFish()
@@ -481,13 +718,16 @@ public class FishAI : MonoBehaviour
         if (!IsHooked)
             return false;
 
-        // One escape roll per completed struggle.
-        bool escaped = Random.value < EscapeChance;
+        bool escaped =
+            Random.value < EscapeChance;
 
         if (escaped)
         {
             ResetFish();
-            Debug.Log(name + " escaped during struggle!");
+
+            Debug.Log(
+                name + " escaped during struggle!"
+            );
         }
 
         return escaped;
@@ -500,7 +740,14 @@ public class FishAI : MonoBehaviour
         biteTimer = 0f;
         hookWindowTimer = 0f;
 
-        startingPosition = transform.position;
+        exitingWater = false;
+
+        Color color = fishSprite.color;
+        color.a = originalAlpha;
+        fishSprite.color = color;
+
+        ClampInsideWater(false);
+
         depthChangeTimer = 0f;
         pauseTimer = 0f;
 

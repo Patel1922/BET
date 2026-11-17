@@ -23,6 +23,9 @@ public class Level1CastingDemo : MonoBehaviour
     public GameObject baitPrefab;
     public Camera gameCamera;
 
+    [Header("Fish AI Integration")]
+    public FishSpawner spawner;
+
     [Header("Optional UI (created automatically if empty)")]
     
 public Button castButton;
@@ -130,34 +133,36 @@ private void Start()
 }
 
 
+
     private void Update()
     {
-        if (state == CastState.Flying || state == CastState.Waiting || state == CastState.Bitten||state == CastState.Reeling)
-            UpdateFishingLine();
-
-        if (state != CastState.Waiting) return;
-
-        // Prasil's fish can spawn at any time, including after the bait lands.
-        if (targetFish == null || !targetFish.gameObject.activeInHierarchy)
+        // Keep the existing fishing line connected to bait.
+        if (state == CastState.Flying ||
+            state == CastState.Waiting ||
+            state == CastState.Bitten ||
+            state == CastState.Reeling)
         {
-            targetFish = null;
-            if (Time.time >= nextFishSearch)
-            {
-                nextFishSearch = Time.time + 0.25f;
-                FindApproachingFish();
-            }
+            UpdateFishingLine();
         }
-        if (targetFish == null) return;
 
-        // Retain the target even if another script briefly clears its bait reference.
-        if (targetFish.bait != baitObject.transform)
-            targetFish.bait = baitObject.transform;
+        if (state != CastState.Waiting || spawner == null)
+            return;
 
-        bool reachedBait = Vector2.Distance(targetFish.transform.position,
-                                             baitObject.transform.position) <= biteDistance;
-        if (reachedBait && Time.time >= biteAllowedTime)
+        // FishSpawner decides which fish is attracted.
+        // We only observe fish that are actually biting.
+        foreach (FishAI fish in spawner.Fish)
+        {
+            if (fish == null || !fish.IsBiting)
+                continue;
+
+            targetFish = fish;
+
+            // Existing event notifies the catching UI.
             ReportBite();
+            break;
+        }
     }
+
 
     /// <summary>Bind this method to the presentation CAST BAIT button.</summary>
     public void CastBait()
@@ -198,13 +203,18 @@ private void Start()
         }
 
         baitObject.transform.position = destination;
-        state = CastState.Waiting;
-        biteAllowedTime = Time.time + UnityEngine.Random.Range(
-            Mathf.Min(minimumWait, maximumWait), Mathf.Max(minimumWait, maximumWait));
-        nextFishSearch = 0f;
-        FindApproachingFish();
-        SetStatus(targetFish == null ? "Bait landed. Waiting for fish to spawn..."
-                                     : "Bait landed. Fish approaching...");
+        
+state = CastState.Waiting;
+
+// Allow FishSpawner to apply the 75% attraction
+// probability to eligible fish.
+if (spawner != null)
+{
+    spawner.SetBaitForAll(baitObject.transform);
+}
+
+SetStatus("Bait landed. Waiting for fish to bite...");
+
     }
 
 
@@ -214,7 +224,8 @@ public void ReelBack()
         state == CastState.Reeling ||
         state == CastState.Bitten)
         return;
-
+    if (spawner != null)
+    spawner.SetBaitForAll(null);
     StopAllCoroutines();
 
     state = CastState.Reeling;
@@ -364,6 +375,8 @@ private IEnumerator AnimateReelBack()
     private void FinishAttempt(string message)
     {
         if (state == CastState.Ready) return;
+        if (spawner != null)
+    spawner.SetBaitForAll(null);
         StopAllCoroutines();
         if (targetFish != null)
         {
