@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -21,6 +20,14 @@ public class Level1FishCatch : MonoBehaviour
     [Min(1f)]
     public float secondsToEscape = 6f;
 
+    [Header("Catch Bar (optional)")]
+    [Tooltip("Drag the CatchPanel from the CatchBarCanvas prefab here. " +
+             "If empty, the old HOLD REEL step is used.")]
+    public CatchBar catchBar;
+
+    [Min(0f)]
+    public float catchBarResultSeconds = 1.2f;
+
     [Header("Prototype Statistics")]
     public int totalCaught = 0;
     public int testCoins = 0;
@@ -40,14 +47,18 @@ public class Level1FishCatch : MonoBehaviour
         if (spawner == null)
             spawner = FindAnyObjectByType<FishSpawner>();
 
+        // The HOOK and HOLD REEL buttons are only needed without the catch bar.
+        bool missingButtons =
+            catchBar == null &&
+            (hookButton == null || holdReelButton == null);
+
         if (casting == null ||
             spawner == null ||
-            hookButton == null ||
-            holdReelButton == null)
+            missingButtons)
         {
             Debug.LogError(
-                "Level1FishCatch: Assign Casting, Spawner, " +
-                "Hook Button, and Hold Reel Button."
+                "Level1FishCatch: Assign Casting and Spawner, plus either " +
+                "the Catch Bar or the Hook Button and Hold Reel Button."
             );
 
             enabled = false;
@@ -57,11 +68,22 @@ public class Level1FishCatch : MonoBehaviour
         // Receive bite notifications from Level1CastingDemo.
         casting.FishBitten += OnFishBitten;
 
+        // Optional catch bar: hidden until a fish is hooked.
+        if (catchBar != null)
+        {
+            catchBar.startOnEnable = false;
+            catchBar.onCaught.AddListener(OnCatchBarCaught);
+            catchBar.onEscaped.AddListener(OnCatchBarEscaped);
+            catchBar.gameObject.SetActive(false);
+        }
+
         // The HOOK button responds to a normal tap.
-        hookButton.onClick.AddListener(HookFish);
+        if (hookButton != null)
+            hookButton.onClick.AddListener(HookFish);
 
         // HOLD REEL uses actual press and release events.
-        ConfigureHoldButton();
+        if (holdReelButton != null)
+            ConfigureHoldButton();
 
         // Start with both catch buttons hidden.
         ShowButtons(false, false);
@@ -132,12 +154,20 @@ public class Level1FishCatch : MonoBehaviour
 
         bitingFish = fish;
 
-        // The fish can now be hooked.
-        ShowButtons(true, false);
-
-        // REEL BACK shouldn't compete with HOOK.
+        // REEL BACK shouldn't compete with the catch step.
         if (casting.reelBackButton != null)
             casting.reelBackButton.gameObject.SetActive(false);
+
+        // With the catch bar there is no HOOK button:
+        // the fish is hooked automatically and the bar appears.
+        if (catchBar != null)
+        {
+            HookFish();
+            return;
+        }
+
+        // The fish can now be hooked.
+        ShowButtons(true, false);
 
         SetFeedback(
             fish.Rarity + " fish is biting! TAP HOOK!"
@@ -163,6 +193,10 @@ public class Level1FishCatch : MonoBehaviour
 
             return;
         }
+
+        // While the catch bar is on screen, it controls the struggle.
+        if (catchBar != null)
+            return;
 
         // Count down the total struggle time.
         escapeTimer -= Time.deltaTime;
@@ -236,6 +270,14 @@ public class Level1FishCatch : MonoBehaviour
         reelHeld = false;
         escapeTimer = secondsToEscape;
 
+        // Catch bar replaces the HOLD REEL step.
+        if (catchBar != null)
+        {
+            ShowButtons(false, false);
+            StartCatchBar(fish);
+            return;
+        }
+
         // Hide HOOK and display HOLD REEL.
         ShowButtons(false, true);
 
@@ -288,6 +330,81 @@ public class Level1FishCatch : MonoBehaviour
         );
     }
 
+    // ----- Catch bar -----
+
+    private void StartCatchBar(FishAI fish)
+    {
+        catchBar.SetRarity(ToCatchRarity(fish.Rarity));
+        catchBar.gameObject.SetActive(true);
+        catchBar.Begin();
+
+        SetFeedback(fish.Rarity + " fish hooked!");
+    }
+
+    private CatchRarity ToCatchRarity(FishAI.FishRarity rarity)
+    {
+        switch (rarity)
+        {
+            case FishAI.FishRarity.Elite:
+                return CatchRarity.Elite;
+            case FishAI.FishRarity.Royal:
+                return CatchRarity.Royal;
+            default:
+                return CatchRarity.Basic;
+        }
+    }
+
+    private void OnCatchBarCaught()
+    {
+        StartCoroutine(FinishCatchBar(true));
+    }
+
+    private void OnCatchBarEscaped()
+    {
+        StartCoroutine(FinishCatchBar(false));
+    }
+
+    private System.Collections.IEnumerator FinishCatchBar(bool caught)
+    {
+        // Let the player read "You caught it!" or "The fish got away!"
+        yield return new WaitForSeconds(catchBarResultSeconds);
+
+        catchBar.gameObject.SetActive(false);
+
+        FishAI fish = hookedFish;
+
+        if (fish == null)
+            yield break;
+
+        if (caught)
+        {
+            string rarity = fish.Rarity.ToString();
+            int reward = fish.CoinValue;
+
+            totalCaught++;
+            testCoins += reward;
+
+            spawner.RemoveCaughtFish(fish);
+
+            ResetEncounter();
+            casting.FinishCatch();
+
+            SetFeedback(
+                "Caught " + rarity + " fish! +" +
+                reward + " test coins."
+            );
+        }
+        else
+        {
+            fish.ResetFish();
+
+            ResetEncounter();
+            casting.FinishMiss();
+
+            SetFeedback("Fish escaped! Cast again.");
+        }
+    }
+
     private void ResetEncounter()
     {
         bitingFish = null;
@@ -332,5 +449,11 @@ public class Level1FishCatch : MonoBehaviour
 
         if (hookButton != null)
             hookButton.onClick.RemoveListener(HookFish);
+
+        if (catchBar != null)
+        {
+            catchBar.onCaught.RemoveListener(OnCatchBarCaught);
+            catchBar.onEscaped.RemoveListener(OnCatchBarEscaped);
+        }
     }
 }
